@@ -215,7 +215,7 @@ def train_grpo_model(model_name: str, dataset_size: int | None = None):
 
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.bfloat16,  # Changed from fp16 to bf16 for better numerical stability
         # attn_implementation="flash_attention_2",  # Commented out for faster startup
         device_map="balanced", #Evenly distribute across devices
     )
@@ -228,7 +228,7 @@ def train_grpo_model(model_name: str, dataset_size: int | None = None):
         output_dir=f"grpo-{model_name}-{dataset_size}",
         run_name=f"grpo-{model_name}-{dataset_size}",
         num_train_epochs=1,
-        per_device_train_batch_size=2,  # Must be divisible by num_generations
+        per_device_train_batch_size=4,  # Increased for better stability (must be divisible by num_generations)
         gradient_accumulation_steps=1,
         learning_rate=5e-6,  # Lower learning rate for stability
         max_grad_norm=1.0,  # Gradient clipping to prevent instability
@@ -242,17 +242,17 @@ def train_grpo_model(model_name: str, dataset_size: int | None = None):
         max_prompt_length=256,
         max_completion_length=256,
         num_generations=2,  # Number of responses per prompt (matches our dataset)
-        beta=0.1,  # KL coefficient
-        epsilon=0.2,  # PPO-style clipping parameter
-        temperature=0.8,  # Slightly higher to avoid numerical issues
+        beta=0.25,  # KL coefficient
+        epsilon=0.1,  # PPO-style clipping parameter
+        temperature=1.1,  # Slightly higher to avoid numerical issues
         loss_type="grpo",
         num_iterations=1,
         log_completions=True,  # Log sample completions for debugging
         # Add generation safety parameters
         generation_kwargs={
             "do_sample": True,
-            "top_p": 0.9,
-            "top_k": 50,
+            "top_p": 0.92,
+            "top_k": 20,
             "repetition_penalty": 1.1,
         },
     )
@@ -285,7 +285,7 @@ def train_grpo_model(model_name: str, dataset_size: int | None = None):
         safe_reward_wrapper(lambda prompts, completions, **kwargs: [check_correctness(p, c) for p, c in zip(prompts, completions)])
     ]
 
-    # Initialize GRPO trainer with list of reward functions
+    # Initialize GRPO trainer with list of reward functions using the safer version
     trainer = GRPOTrainer(
         model=model,
         reward_funcs=reward_functions,  # Use list of reward functions
